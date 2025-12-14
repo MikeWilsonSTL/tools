@@ -1,0 +1,15 @@
+# SPDX-FileCopyrightText: 2025 Mike Wilson
+# SPDX-License-Identifier: GPL-3.0-or-later
+repos:
+  # REUSE
+  - repo: git@github.com:fsfe/reuse-tool.git
+    rev: v6.2.0
+    hooks:
+      - id: reuse
+  # ShellCheck
+  - repo: git@github.com:koalaman/shellcheck-precommit
+    rev: v0.11.0
+    hooks:
+    -   id: shellcheck
+        files: ^scripts/.*\.sh$
+        args: ["-x"]

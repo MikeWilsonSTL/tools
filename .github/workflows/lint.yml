@@ -1,0 +1,27 @@
+# SPDX-FileCopyrightText: 2025 Mike Wilson
+# SPDX-License-Identifier: GPL-3.0-or-later
+name: Lint
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: REUSE Lint
+        uses: fsfe/reuse-action@v3
+
+      - name: Install ShellCheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: Run ShellCheck
+        run: |
+          find ./scripts -name '*.sh' -print0 | xargs -0 shellcheck -x
+
