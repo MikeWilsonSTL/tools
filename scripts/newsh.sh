@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2025 Mike Wilson
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# Usage: newsh [options] [filename]
+# Usage: newsh.sh [options] [filename]
 # Author: Mike Wilson <mike@mikewilsonstl.com>
 # Created: 2025-12-14T17:06:00+00:00
 # Description: A tool to streamline bash script creation. Creates a named script from a template and opens a text editor.

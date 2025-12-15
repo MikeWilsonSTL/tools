@@ -2,10 +2,11 @@
 # SPDX-FileCopyrightText: 2025 Mike Wilson
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# Usage: [how to run the script, e.g., ./script_name.sh <arguments>]
+# Usage: emmc-checker.sh [/dev/mmcblkX]
 # Author: Mike Wilson <mike@mikewilsonstl.com>
 # Created: 2025-12-14T15:09:21-05:00
-# Description: [brief purpose of the script]
+# Description: This tool creates a SMART health inspired display for
+#              eMMC storage devices for readability and documentation
 
 set -euo pipefail
 shopt -s extglob
