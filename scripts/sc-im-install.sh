@@ -20,10 +20,12 @@ main() {
     sudo make install
     sudo ldconfig
     cd ..
+    rm -rf libxlsxwriter
     git clone https://github.com/andmarti1424/sc-im.git
     cd ./sc-im/src/
     make
     sudo make install
+    rm -rf sc-im
 }
 
 main "$@"
