@@ -14,6 +14,7 @@ shopt -s extglob
 # defaults
 FILENAME=""
 TIMESTAMP=true
+YEAR=""
 TEMPLATE_FILE=""
 SHELL="bash"
 NO_EDIT=false
@@ -23,7 +24,7 @@ FORCE=false
 template_bash() {
 cat <<'EOF'
 #!/usr/bin/env bash
-# SPDX-FileCopyrightText: 2025 Mike Wilson
+# SPDX-FileCopyrightText: {{YEAR}} Mike Wilson
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
 # Usage: [how to run the script, e.g., ./script_name.sh <arguments>]
@@ -101,6 +102,7 @@ parse_args() {
 
 
 collect_metadata() {
+    $YEAR && YEAR="$(date +%Y)" || YEAR=""
     $TIMESTAMP && TIMESTAMP="$(date -Is)" || TIMESTAMP=""
 }
 
@@ -117,6 +119,7 @@ render_template() {
     fi
 
     content="${content//\{\{TIMESTAMP\}\}/$TIMESTAMP}"
+    content="${content//\{\{YEAR\}\}/$YEAR}"
 
     printf '%s\n' "$content"
 }
