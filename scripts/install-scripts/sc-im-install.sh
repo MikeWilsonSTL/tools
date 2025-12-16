@@ -25,6 +25,7 @@ main() {
     cd ./sc-im/src/
     make
     sudo make install
+    cd ..
     rm -rf sc-im
 }
 
