@@ -11,6 +11,8 @@ set -euo pipefail
 shopt -s extglob
 
 main() {
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+    source "$HOME/.cargo/env"   
     sudo apt install \
         build-essential \
         libncursesw5-dev \
@@ -22,8 +24,8 @@ main() {
         libstfl-dev \
         libjson-c-dev \
         asciidoctor \
-    	gettext
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+    	gettext \
+	libssl-dev -y
     git clone https://github.com/newsboat/newsboat.git
     cd newsboat
     make

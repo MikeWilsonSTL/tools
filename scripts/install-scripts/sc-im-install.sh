@@ -13,7 +13,15 @@ shopt -s extglob
 
 main() {
     sudo apt update
-    sudo apt install pkg-config bison build-essential git libncursesw5-dev libncurses5-dev libxml2-dev libzip-dev libxlsxwriter-dev -y
+    sudo apt install pkg-config \
+        bison \
+	build-essential \
+	git \
+	libncursesw5-dev \
+	libncurses5-dev \
+	libxml2-dev \
+	libzip-dev \
+	libxlsxwriter-dev -y
     git clone https://github.com/jmcnamara/libxlsxwriter.git
     cd ./libxlsxwriter/
     make
