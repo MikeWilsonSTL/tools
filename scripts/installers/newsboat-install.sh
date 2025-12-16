@@ -56,7 +56,7 @@ main() {
     fi
 
     # shellcheck disable=SC1090
-    source "$HOME/.cargo/env"
+    source ". $HOME/.cargo/env"
 
     log "Cloning Newsboat $NEWSBOAT_VERSION"
     git clone --branch "$NEWSBOAT_VERSION" --depth 1 \

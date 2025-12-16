@@ -29,12 +29,12 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 main() {
-    read -p "Enter key name [id_ed25519]: " KEYNAME
+    read -r -p "Enter key name [id_ed25519]: " KEYNAME
     KEYNAME="${KEYNAME:-id_ed25519}"
     KEYPATH="$HOME/.ssh/$KEYNAME"
 
     if [[ -e "$KEYPATH" || -e "$KEYPATH.pub" ]]; then
-        read -p "Key already exists. Overwrite? [y/N]: " reply
+        read -r -p "Key already exists. Overwrite? [y/N]: " reply
         reply="${reply,,}"
         [[ "$reply" == "y" || "$reply" == "yes" ]] || {
             echo "Aborted."
@@ -43,8 +43,8 @@ main() {
         rm -f "$KEYPATH" "$KEYPATH.pub"
     fi
 
-    read -p "Enter comment: " COMMENT
-    read -s -p "Enter passphrase: " PASSPHRASE
+    read -r -p "Enter comment: " COMMENT
+    read -r -s -p "Enter passphrase: " PASSPHRASE
     echo
     while ! $ACCEPTED; do
 	clear
@@ -54,10 +54,10 @@ main() {
             -N "$PASSPHRASE"
         GENERATED=true
         echo
-        cat $KEYPATH.pub
+        cat "$KEYPATH.pub"
         echo
         echo "Enter 'y' to accept key. Hit 'Enter' to generate another key."
-        read -p "" reply
+        read -r -p "" reply
         reply="${reply,,}"
 
         if [[ "$reply" == "y" || "$reply" == "yes" ]]; then
