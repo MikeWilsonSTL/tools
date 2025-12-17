@@ -5,9 +5,6 @@
 # Usage: newsboat-install.sh
 # Author: Mike Wilson <mike@mikewilsonstl.com>
 # Created: 2025-12-15T22:50:02-05:00
-# Description: Installing newsboat was a pain due to
-# 	       hunting dependencies. This should 
-# 	       automate the process.
 # Description: Installs newsboat and all dependencies.
 
 set -Eeuo pipefail
