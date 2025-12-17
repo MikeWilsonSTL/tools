@@ -11,6 +11,16 @@
 set -euo pipefail
 shopt -s extglob
 
+CID=""
+MODEL="Unknown"
+FW="Unknown"
+SEC_COUNT=0
+CARD_TYPE_HEX=""
+ACTIVE_MODE_HEX=""
+WEAR_A="0x00"
+WEAR_B="0x00"
+PRE_EOL="0x00"
+
 extract_hex_field() {
     local field="$1"
     local val
@@ -83,7 +93,7 @@ assess_health() {
         health="Warning"
     fi
 
-    if [[ "$bad_blocks" != "Not supported" ]] && (( bad_blocks > 0 )); then
+    if [[ "$bad_blocks" =~ ^[0-9]+$ ]] && (( bad_blocks > 0 )); then
         health="Warning"
     fi
 
@@ -102,7 +112,7 @@ main() {
     fi
 
     # get device from CLI or prompt
-    if [[ -n "$1" ]]; then
+    if [[ -n "${1:-}" ]]; then
         DEVICE="$1"
     else
         read -rp "Enter the eMMC device (e.g., /dev/mmcblk0): " DEVICE
@@ -180,10 +190,10 @@ main() {
     FW=$(echo "$EXTCSD" | grep -i "Firmware Version" | awk '{print $NF}')
 
     SEC_COUNT=$(extract_hex_field "SEC_COUNT")
-    BYTES=$((SEC_COUNT))
+    BYTES=$(( ${SEC_COUNT:-0} ))
     CAP_GIB=$(printf "%.2f" "$(echo "$BYTES / 2097152" | bc -l)")
 
-    CARD_TYPE_HEX=$(extract_hex_field "CARD_TYPE")
+    CARD_TYPE_HEX=$(extract_hex_field "CARD_TYPE" || true)
     SUPPORTED_MODES=$(decode_card_type "$CARD_TYPE_HEX")
 
     ACTIVE_MODE_HEX=$(extract_hex_field "HS_TIMING")
