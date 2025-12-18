@@ -53,7 +53,16 @@ main() {
     fi
 
     # shellcheck disable=SC1090
-    source ". $HOME/.cargo/env"
+    # source ". $HOME/.cargo/env"
+
+
+    # ^^^ issue here. 
+    # why did the source path not work? running it maunally worked fine. 
+    # commenting line 56 for now
+    # . "$HOME/.cargo/env"            # For sh/bash/zsh/ash/dash/pdksh
+    # source "$HOME/.cargo/env.fish"  # For fish
+    # source $"($nu.home-path)/.cargo/env.nu"  # For nushell
+    # ./newsboat-install.sh: line 56: . /home/mike/.cargo/env: No such file or directory
 
     log "Cloning Newsboat $NEWSBOAT_VERSION"
     git clone --branch "$NEWSBOAT_VERSION" --depth 1 \
