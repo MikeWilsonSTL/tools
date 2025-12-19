@@ -1,0 +1,357 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2025 David Lantz
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Usage: ./dd-progress.sh -h | --help
+# Author: David Lantz
+# Created: 2025-12-17T16:10:59-05:00
+# Description: watch dd skip= progress + ETA
+#              default values of 14tb, 10%, 1000MiB chunks match current verification process for SMR drives
+#              defaults are accurate as of 2025/12/15
+
+set -euo pipefail
+shopt -s extglob
+
+usage() {
+    cat <<'EOF'
+    dd-progress.sh — monitor dd-based verification hashing
+
+    Watches running dd processes used for SMR verification hashing and prints:
+    - %DONE (estimated from skip bytes vs max offset)
+    - ETA   (estimated from segment timing + a seeded average)
+
+    Defaults (press Enter) match the current 14TB SMR verification process:
+    Drive size:            14 TB (decimal)
+    Verification fraction: 0.10
+    Chunk size:            1000 MiB
+    ETA seed:              1.25 hours per full 0–100% hash pass
+
+    Notes:
+    - You can start/stop this script anytime; %DONE is inferred from current dd skip=.
+    - ETA counts down in real time and will not increase during a run.
+    - For best accuracy, let it observe a few segment transitions.
+    - Ctrl-C exits cleanly.
+
+    Usage:
+    ./dd-progress.sh
+    ./dd-progress.sh -h | --help
+EOF
+}
+
+main() {
+    case "${1:-}" in
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        "" )
+            ;;
+        * )
+            echo "Unknown option: $1" >&2
+            echo "Use -h/--help for help." >&2
+            exit 2
+            ;;
+        esac
+
+    echo "Monitor dd progress for the current pre/post wipe hash pass."
+    echo "Press Enter to accept defaults (recommended for current 14TB SMR validation)."
+    echo
+
+    read -r -p "Drive size in TB [14]: " TB
+    TB=${TB:-14}
+
+    read -r -p "Verification fraction [0.10]: " VF
+    VF=${VF:-0.10}
+
+    read -r -p "Chunk size in MiB [1000]: " CHUNK_MIB
+    CHUNK_MIB=${CHUNK_MIB:-1000}
+
+    # decimal TB: 1 TB = 1e12 bytes
+    SIZE_BYTES=$(awk -v tb="$TB" 'BEGIN{printf "%.0f\n", tb*1000000000000}')
+    CHUNK_BYTES=$(awk -v mib="$CHUNK_MIB" 'BEGIN{printf "%.0f\n", mib*1024*1024}')
+
+    # default segments derived from verify_random_segments logic:
+    # num_segments = max(1, floor(total_to_hash / chunk_size_bytes))
+    TOTAL_SEGMENTS=$(awk -v size="$SIZE_BYTES" -v vf="$VF" -v chunk="$CHUNK_BYTES" 'BEGIN{
+        total=int(size*vf);
+        seg=int(total/chunk);
+        if(seg<1) seg=1;
+        print seg
+    }')
+
+    # "100%" approx when skip reaches highest possible start offset
+    SKIP_MAX_EST=$(( SIZE_BYTES - CHUNK_BYTES ))
+    (( SKIP_MAX_EST <= 0 )) && SKIP_MAX_EST=1
+
+    bar() {
+        local pct="$1" w=30 filled i
+        filled=$(awk -v p="$pct" -v w="$w" 'BEGIN{
+            f=int((p/100)*w);
+            if(f<0)f=0;
+            if(f>w)f=w;
+            print f
+        }')
+        printf "["
+        for ((i=0;i<filled;i++)); do printf "#"; done
+        for ((i=filled;i<w;i++)); do printf "-"; done
+        printf "]"
+    }
+
+    fmt_eta() {
+        local sec="$1"
+        if [[ -z "${sec:-}" || "$sec" -le 0 ]]; then
+            printf "0s"
+            return
+        fi
+        local h=$((sec/3600))
+        local m=$(((sec%3600)/60))
+        local s=$((sec%60))
+        if ((h>0)); then
+            printf "%dh%02dm" "$h" "$m"
+        elif ((m>0)); then
+            printf "%dm%02ds" "$m" "$s"
+        else
+            printf "%ds" "$s"
+        fi
+    }
+
+    # Tracking per device
+    declare -A prev_skip         # last seen skip (bytes)
+    declare -A max_skip          # monotonic skip anchor (prevents backtracking/jitter)
+    declare -A last_boundary_ts  # time of last observed segment boundary
+    declare -A ema_seg_sec       # EMA of segment seconds
+    declare -A samples           # EMA sample count
+    declare -A eta_floor         # non-increasing ETA base
+    declare -A eta_base_sec      # last committed ETA base seconds
+    declare -A eta_base_ts       # timestamp when eta_base_sec was committed
+    declare -A row_of_dev        # stable screen row per dev
+    declare -A last_drawn_state  # redraw gate per dev
+    declare -A last_seen_ts      # for stale clearing
+
+    # EMA tuning
+    EMA_ALPHA="0.12"
+    MIN_SAMPLES_FOR_ETA=3
+
+    # Polling
+    POLL_SEC=1
+    STALE_CLEAR_SEC=5
+
+    # Optional seed: observed steady runtime per 0–100% pass (~1.25 hrs = 4500s)
+    # Set to 0 to disable.
+    EXPECTED_PASS_SEC=4500
+
+    seed_ema_if_needed() {
+    local dev="$1"
+    if [[ -z "${ema_seg_sec[$dev]:-}" || "${ema_seg_sec[$dev]}" == "0" ]]; then
+        if [[ "$EXPECTED_PASS_SEC" -gt 0 ]]; then
+        ema_seg_sec[$dev]=$(awk -v pass="$EXPECTED_PASS_SEC" -v t="$TOTAL_SEGMENTS" 'BEGIN{
+            if(t<=0){print 0; exit}
+            printf "%.6f", pass/t
+        }')
+        samples[$dev]=0
+        fi
+    fi
+    }
+
+    # Hide cursor
+    tput civis 2>/dev/null || true
+    trap 'tput cnorm 2>/dev/null || true; echo; exit 0' INT TERM
+
+    clear
+
+    SCRIPT_NAME="$(basename "$0")"
+    echo "$SCRIPT_NAME"
+    echo "Monitor dd progress for the current pre/post wipe hash pass"
+    echo "Starting values:  size=${TB}TB  vf%=${VF}  chunk=${CHUNK_MIB}MiB"
+    echo "Estimated skip max:  ${SKIP_MAX_EST} bytes"
+    echo "Estimated segments: ${TOTAL_SEGMENTS}"
+    echo
+
+    printf "%-7s %-10s %-18s %-8s %-8s %s\n" "PID" "DEV" "SKIP(bytes)" "%DONE" "ETA" "PROGRESS"
+    echo "--------------------------------------------------------------------------"
+
+    DATA_BASE_ROW=8
+    next_row_offset=0
+
+    while :; do
+    now=$(date +%s)
+
+    mapfile -t rows < <(
+        ps -eo pid=,args= \
+        | awk '
+            $0 ~ /(^|[[:space:]])dd([[:space:]]|$)/ &&
+            $0 ~ /if=\/dev\// &&
+            $0 ~ /skip=/ &&
+            $0 ~ /count=/ &&
+            $0 ~ /iflag=.*skip_bytes/ &&
+            $0 ~ /iflag=.*count_bytes/ {
+            pid=$1
+            sub(/^[[:space:]]*[0-9]+[[:space:]]+/, "", $0)
+            print pid "\t" $0
+            }'
+    )
+
+    if ((${#rows[@]}==0)); then
+        tput cup "$DATA_BASE_ROW" 0 2>/dev/null || true
+        tput el 2>/dev/null || true
+        echo "No matching dd process found. Waiting..."
+        sleep 1
+        continue
+    fi
+
+    declare -A active
+
+    for r in "${rows[@]}"; do
+        pid=${r%%$'\t'*}
+        args=${r#*$'\t'}
+
+        dev=$(awk 'match($0,/if=\/dev\/[^[:space:]]+/,m){print m[0]}' <<<"$args" | cut -d= -f2)
+        skip=$(awk 'match($0,/skip=[0-9]+/,m){print substr(m[0],6)}' <<<"$args")
+        [[ -z "${dev:-}" ]] && dev="?"
+        [[ -z "${skip:-}" ]] && skip=0
+
+        active[$dev]=1
+        last_seen_ts[$dev]="$now"
+
+        # assign stable row per device
+        if [[ -z "${row_of_dev[$dev]:-}" ]]; then
+        row_of_dev[$dev]=$(( DATA_BASE_ROW + next_row_offset ))
+        next_row_offset=$(( next_row_offset + 1 ))
+        tput cup "${row_of_dev[$dev]}" 0 2>/dev/null || true
+        tput el 2>/dev/null || true
+        fi
+
+        # reset if skip moved backwards a lot (new pass/session)
+        if [[ -n "${prev_skip[$dev]:-}" ]] && (( skip + CHUNK_BYTES < prev_skip[$dev] )); then
+            last_boundary_ts[$dev]=0
+            ema_seg_sec[$dev]=0
+            samples[$dev]=0
+            eta_floor[$dev]=0
+            eta_base_sec[$dev]=0
+            eta_base_ts[$dev]=0
+            last_drawn_state[$dev]=""
+            max_skip[$dev]="$skip"
+        fi
+
+        # Monotonic skip anchor (skip can jitter/backtrack within a segment)
+        prev_max=${max_skip[$dev]:-0}
+        if (( skip > prev_max )); then
+            max_skip[$dev]="$skip"
+        else
+            max_skip[$dev]="$prev_max"
+        fi
+
+        # %DONE: attach-anytime, monotonic (based on max skip seen vs max)
+        pct=$(awk -v s="${max_skip[$dev]:-0}" -v m="$SKIP_MAX_EST" 'BEGIN{
+            p=(s/m)*100;
+            if(p<0)p=0;
+            if(p>100)p=100;
+            printf "%.1f", p
+        }')
+
+        # Infer segment index from pct (0..TOTAL_SEGMENTS) — monotonic due to max_skip
+        seg_idx_est=$(awk -v p="$pct" -v t="$TOTAL_SEGMENTS" 'BEGIN{
+            if(t<=0){print 0; exit}
+            x=int((p/100)*t + 0.5);   # round
+            if(x<0)x=0;
+            if(x>t)x=t;
+            print x
+        }')
+
+        # Seed EMA
+        seed_ema_if_needed "$dev"
+
+        # Segment boundary detection: skip change is a reliable new-segment indicator
+        if [[ -n "${prev_skip[$dev]:-}" && "$skip" != "${prev_skip[$dev]}" ]]; then
+        lastt=${last_boundary_ts[$dev]:-0}
+        if (( lastt > 0 )); then
+            dt=$(( now - lastt ))
+            (( dt < 1 )) && dt=1
+
+            if [[ "${samples[$dev]:-0}" -eq 0 ]]; then
+            # blend seed with first dt so it converges quickly but doesn't spike
+            if [[ -n "${ema_seg_sec[$dev]:-}" && "${ema_seg_sec[$dev]}" != "0" && "$EXPECTED_PASS_SEC" -gt 0 ]]; then
+                ema_seg_sec[$dev]=$(awk -v seed="${ema_seg_sec[$dev]}" -v dt="$dt" 'BEGIN{
+                printf "%.6f", (seed*0.7 + dt*0.3)
+                }')
+            else
+                ema_seg_sec[$dev]="$dt"
+            fi
+            else
+                ema_seg_sec[$dev]=$(awk -v ema="${ema_seg_sec[$dev]}" -v dt="$dt" -v a="$EMA_ALPHA" 'BEGIN{
+                    printf "%.6f", (ema*(1-a) + dt*a)
+            }')
+            fi
+            samples[$dev]=$(( ${samples[$dev]:-0} + 1 ))
+        fi
+        last_boundary_ts[$dev]="$now"
+        elif [[ -z "${prev_skip[$dev]:-}" ]]; then
+            last_boundary_ts[$dev]="$now"
+        fi
+        prev_skip[$dev]="$skip"
+
+        # ETA: compute a non-increasing base, then count down in real time
+        eta_str="calculating"
+        if [[ "${samples[$dev]:-0}" -ge "$MIN_SAMPLES_FOR_ETA" ]]; then
+        remain=$(( TOTAL_SEGMENTS - seg_idx_est ))
+        (( remain < 0 )) && remain=0
+
+        eta_sec=$(awk -v ema="${ema_seg_sec[$dev]:-0}" -v r="$remain" 'BEGIN{
+            s=int(ema*r);
+            if(s<0) s=0;
+            print s
+        }')
+
+        # Non-increasing base (commit new base when it drops)
+        if [[ "${eta_floor[$dev]:-0}" -eq 0 || "$eta_sec" -lt "${eta_floor[$dev]}" ]]; then
+            eta_floor[$dev]="$eta_sec"
+            eta_base_sec[$dev]="$eta_sec"
+            eta_base_ts[$dev]="$now"
+        fi
+
+        base=${eta_base_sec[$dev]:-${eta_floor[$dev]:-0}}
+        basets=${eta_base_ts[$dev]:-0}
+        if (( basets > 0 )); then
+            elapsed=$(( now - basets ))
+            (( elapsed < 0 )) && elapsed=0
+            show=$(( base - elapsed ))
+            (( show < 0 )) && show=0
+            eta_str="$(fmt_eta "$show")"
+        else
+            eta_str="$(fmt_eta "${eta_floor[$dev]}")"
+        fi
+        fi
+
+        # redraw only if visible state changed
+        state="${pid}|${dev}|${skip}|${pct}|${eta_str}|${seg_idx_est}"
+        if [[ "${last_drawn_state[$dev]:-}" == "$state" ]]; then
+        continue
+        fi
+        last_drawn_state[$dev]="$state"
+
+        row="${row_of_dev[$dev]}"
+        tput cup "$row" 0 2>/dev/null || true
+        tput el 2>/dev/null || true
+
+        printf "%-7s %-10s %-18s %-8s %-8s " "$pid" "$dev" "$skip" "${pct}%" "$eta_str"
+        bar "$pct"
+    done
+
+    # Clear stale device rows
+    for dev in "${!row_of_dev[@]}"; do
+        if [[ -z "${active[$dev]:-}" ]]; then
+        lastseen=${last_seen_ts[$dev]:-0}
+        if (( lastseen > 0 && now - lastseen >= STALE_CLEAR_SEC )); then
+            row="${row_of_dev[$dev]}"
+            tput cup "$row" 0 2>/dev/null || true
+            tput el 2>/dev/null || true
+            last_drawn_state[$dev]=""
+        fi
+        fi
+    done
+
+    sleep "$POLL_SEC"
+    done
+}
+
+main "$@"
