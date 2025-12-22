@@ -2,10 +2,14 @@
 # SPDX-FileCopyrightText: 2025 David Lantz
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# Usage: [how to run the script, e.g., ./script_name.sh <arguments>]
+# WARNING: This is a descructive script that will result in data loss.
+#
+# Usage: pattern-writer.sh
 # Author: David Lantz
 # Created: 2025-12-22T14:07:52-05:00
-# Description: [brief purpose of the script]
+# Description: An SMR drive sanitization testing utility. Writes a 
+#              known data pattern from the beginning to end for selected
+#              SMR hard drives.
 
 set -euo pipefail
 shopt -s extglob
