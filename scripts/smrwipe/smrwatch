@@ -10,7 +10,10 @@
 #              pressure. If this gets too high, wipes will fail.
 #
 # TODO: Add logging export at the end of the process. Calculate average values.
-#       Consider adding basic analytics at the end of the program.
+#       Consider adding basic analytics at the end of the program. Add information
+#       to the display so the user understands what the numbers mean.(Are these 
+#       numbers percentages? what is the unit? what is the limit? Am I close? 
+#       Do I have the bandwidth to add another worker to the next wipe?)
 
 set -euo pipefail
 shopt -s nullglob
