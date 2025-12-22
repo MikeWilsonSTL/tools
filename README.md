@@ -5,4 +5,4 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 # my tools
 
-I enjoy building robust cli tools but I often don't need the extra options. These are tools that I've tailored for my personal use cases.
+This is my personal repository for the tools I make, find, and customize. Where applicable, these tools are different than the versions I've released on their own dedicated repos. I've tailored these for my personal use.
