@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2025 David Lantz
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Usage: [how to run the script, e.g., ./script_name.sh <arguments>]
+# Author: David Lantz
+# Created: 2025-12-22T14:07:52-05:00
+# Description: [brief purpose of the script]
+
+set -euo pipefail
+shopt -s extglob
+
+main() {
+  # Fixed pattern to write to all host-managed drives (64-bit hex)
+  PATTERN_HEX=0xC01DC0FFEECAFE
+
+  # Drive list (host-managed only, from your mapping)
+  DEVICES=(
+    sdaq  # VEG1STYS
+    sdar  # VEG1SMXS
+    sdap  # VEG1SEES
+    sdas  # VEG1SEJS
+    sdao  # VEG1U1GU
+    sdaf  # VEG520BU
+    sdah  # VEG4E3VU
+    sdad  # VEG1SKKS
+    sdac  # VEG1TEMU
+    sdae  # VEG1SX4S
+    sdaa  # VEG1T1ES
+    sdy   # VEG1TKXU
+    sdw   # VEG1TUXU
+  )
+
+  mkdir -p logs
+
+  echo "ZBC host-managed full-drive pattern write"
+  echo "Pattern: ${PATTERN_HEX}"
+  echo "Devices: ${DEVICES[*]}"
+  echo
+
+  # Track background fio jobs
+  pids=()
+  devnames=()
+
+  for dev in "${DEVICES[@]}"; do
+      path="/dev/${dev}"
+
+      echo "--------------------------------------------------------------------"
+      echo "Checking ${path} ..."
+      if [[ ! -b "${path}" ]]; then
+          echo "  ! Skipping: ${path} does not exist."
+          continue
+      fi
+
+      zoned_file="/sys/block/${dev}/queue/zoned"
+      if [[ -f "${zoned_file}" ]]; then
+          zoned_val=$(<"${zoned_file}")
+      else
+          zoned_val="(missing)"
+      fi
+
+      if [[ "${zoned_val}" != "host-managed" ]]; then
+          echo "  ! Skipping: zoned=${zoned_val} (expected host-managed)."
+          continue
+      fi
+
+      if lsblk -no MOUNTPOINT "${path}" | grep -q .; then
+          echo "  ! Skipping: ${path} appears to be mounted."
+          continue
+      fi
+
+      size_bytes=$(blockdev --getsize64 "${path}")
+      echo "  -> Size: ${size_bytes} bytes"
+      echo "  -> Zoned: ${zoned_val}"
+      echo "  -> Pattern: ${PATTERN_HEX}"
+
+      echo "  -> Resetting all zones on ${path} ..."
+      blkzone reset "${path}"
+
+      log="logs/fio_${dev}_$(date +%Y%m%d_%H%M%S).log"
+      echo "  -> Starting fio on ${path}, logging to ${log}"
+      echo
+
+      fio --name="smr_full_zbc_${dev}" --filename="${path}" \
+          --direct=1 \
+          --zonemode=zbd \
+          --offset=0 \
+          --size="${size_bytes}" \
+          --ioengine=libaio --iodepth=8 \
+          --rw=write \
+          --bs=128K \
+          --buffer_pattern=${PATTERN_HEX} \
+          --continue_on_error=write \
+          --numjobs=1 --group_reporting=1 \
+          --eta=always --status-interval=600 \
+          --output="${log}" &
+
+      pids+=($!)
+      devnames+=("${dev}")
+      echo "  -> fio started on ${path} (PID ${pids[-1]})"
+  done
+
+  echo
+  echo "Waiting for all fio jobs to finish..."
+
+  overall_rc=0
+  for i in "${!pids[@]}"; do
+      pid=${pids[$i]}
+      dev=${devnames[$i]}
+      if ! wait "${pid}"; then
+          rc=$?
+          echo "  ! fio on /dev/${dev} (PID ${pid}) exited with status ${rc}"
+          overall_rc=$rc
+      else
+          echo "  -> fio on /dev/${dev} (PID ${pid}) completed successfully"
+      fi
+  done
+
+  echo "All requested host-managed drives processed."
+  exit "${overall_rc}"
+}
+
+main "$@"
