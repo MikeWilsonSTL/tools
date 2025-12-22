@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-# SPDX-FileCopyrightText: 2025 Mike Wilson
-# SPDX-License-Identifier: GPL-3.0-or-later
 #
 # WARNING: This is a descructive script that will result in data loss.
 #

@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
-# SPDX-FileCopyrightText: 2025 Mike Wilson
-# SPDX-License-Identifier: GPL-3.0-or-later
 #
 # smrwatch - live SMR wipe monitoring TUI with progress bars
 # Author: Mike Wilson <mike@mikewilsonstl.com>
 # Created: 2025-12-15
+# Usage: ./smrwatch
+# Author: Mike Wilson <mike@mikewilsonstl.com>
+# Created: 2025-12-22T14:07:52-05:00
+# Description: Watches the active smrwipe processes and monitors IO
+#              pressure. If this gets too high, wipes will fail.
+#
+# TODO: Add logging export at the end of the process. Calculate average values.
+#       Consider adding basic analytics at the end of the program.
 
 set -euo pipefail
 shopt -s nullglob

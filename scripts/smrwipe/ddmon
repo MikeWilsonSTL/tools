@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# SPDX-FileCopyrightText: 2025 David Lantz
-# SPDX-License-Identifier: GPL-3.0-or-later
 #
 # Usage: ./dd-progress.sh -h | --help
 # Author: David Lantz

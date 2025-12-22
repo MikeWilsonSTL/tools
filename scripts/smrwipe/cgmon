@@ -2,10 +2,10 @@
 # SPDX-FileCopyrightText: 2025 Mike Wilson
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# Usage: [how to run the script, e.g., ./script_name.sh <arguments>]
+# Usage: ./cgmon
 # Author: Mike Wilson <mike@mikewilsonstl.com>
 # Created: 2025-12-15T16:22:03-05:00
-# Description: [brief purpose of the script]
+# Description: Checks all active cg processes.
 
 set -euo pipefail
 shopt -s extglob
