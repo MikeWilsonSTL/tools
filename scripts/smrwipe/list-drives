@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Usage: ./list-drives
+# Author: David Lantz
+# Created: 2026-01-05T12:05:20-05:00
+# Description: List all drives in a JBOD with SAS expander/s
+
+set -euo pipefail
+shopt -s extglob
+
+main() {
+  # Require sudo/root
+  if [[ $EUID -ne 0 ]]; then
+      echo "Run with sudo"
+      exit 1
+  fi
+
+  echo "SAS Expander, PHY, Disk, Serial Number"
+
+  total_count=0
+  tmp=$(mktemp)
+
+  # Loop all SAS expander disk paths
+  for p in /dev/disk/by-path/*-sas-exp0x*-phy*-lun-0; do
+      [[ -e "$p" ]] || continue
+
+      name=$(basename "$p")
+
+      # Extract expander ID and PHY number
+      expander=$(sed -E 's/.*-sas-(exp0x[0-9a-f]+)-phy[0-9]+-.*/\1/' <<< "$name")
+      phy=$(sed -E 's/.*-phy([0-9]+)-lun-.*/\1/' <<< "$name")
+
+      # Resolve /dev/sdX
+      dev=$(readlink -f "$p") || continue
+      disk=${dev##*/}
+
+      # SMART serial number
+      serial=$(smartctl -i "$dev" 2>/dev/null \
+          | awk -F: '/Serial Number/ {sub(/^[ \t]+/, "", $2); print $2}')
+      [[ -n "$serial" ]] || serial="UNKNOWN"
+
+      echo "$expander, phy$phy, $disk, $serial" >> "$tmp"
+      ((total_count++))
+  done
+
+  # Print sorted output
+  sort -t',' -k1,1 -k2,2V "$tmp"
+  rm -f "$tmp"
+
+  echo
+  echo "Total drives: $total_count"
+  echo
+}
+
+main "$@"
